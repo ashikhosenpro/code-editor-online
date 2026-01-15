@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Editor Online</title>
+    <style>
+        :root { --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; --border: #30363d; --folder: #d29922; --gutter: #484f58; --line-num: #8b949e; --success: #238636; --link: #aff5b4; }
+        body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        header { background: var(--panel); padding: 0 20px; display: flex; align-items: center; border-bottom: 1px solid var(--border); justify-content: space-between; z-index: 2000; height: 50px; flex-shrink: 0; }
+        .main { display: flex; flex: 1; overflow: hidden; position: relative; }
+        
+        /* Resizable Sidebar */
+        .sidebar { width: 280px; min-width: 180px; background: #010409; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+        .sidebar-header { padding: 12px 15px; font-size: 11px; text-transform: uppercase; color: #8b949e; border-bottom: 1px solid #222; font-weight: bold; }
+        .file-tree { flex: 1; overflow-y: auto; padding: 10px 0; user-select: none; }
+
+        /* Workspace & Editor */
+        .workspace { flex: 1; min-width: 300px; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+        .path-bar { background: #0d1117; padding: 8px 20px; font-size: 11px; color: #8b949e; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; height: 32px; align-items: center; }
+        .path-actions { display: flex; gap: 8px; }
+        .editor-container { flex: 1; display: flex; overflow: hidden; position: relative; background: #0d1117; }
+        .line-numbers { width: 45px; background: #0d1117; color: var(--line-num); text-align: right; padding: 20px 10px; font-family: 'Consolas', monospace; font-size: 14px; line-height: 1.6; border-right: 1px solid var(--border); pointer-events: none; }
+        #editor { flex: 1; background: transparent; color: #e6edf3; border: none; padding: 20px; font-family: 'Consolas', monospace; outline: none; resize: none; font-size: 14px; line-height: 1.6; overflow-y: auto; }
+        
+        #imgView { display: none; flex: 1; align-items: center; justify-content: center; background: #0d1117; padding: 40px; }
+        #imgView img { max-width: 100%; max-height: 100%; border: 1px solid var(--border); box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+
+        /* Preview Panel */
+        .preview-panel { width: 450px; min-width: 250px; background: #010409; display: flex; flex-direction: column; border-left: 1px solid var(--border); }
+        .toolbar { background: #161b22; padding: 8px; display: flex; gap: 6px; justify-content: center; border-bottom: 1px solid var(--border); }
+        .iframe-container { flex: 1; padding: 15px; display: flex; justify-content: center; overflow: auto; background: #0a0c10; }
+        #prevWrapper { background: white; height: 100%; width: 100%; transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.4s ease; box-shadow: 0 0 20px rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; }
+        iframe { width: 100%; height: 100%; border: none; transition: opacity 0.3s ease; }
+        .toolbar .btn { transition: all 0.3s ease; }
+        .toolbar .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+
+        /* Resizer */
+        .resizer { width: 4px; cursor: col-resize; background: transparent; transition: 0.2s; z-index: 100; }
+        .resizer:hover, .resizer.dragging { background: var(--accent); }
+
+        /* Tree UI */
+        .tree-item { display: flex; align-items: center; padding: 6px 12px; cursor: pointer; font-size: 13px; border: 1px solid transparent; white-space: nowrap; color: #8b949e; transition: background 0.2s, color 0.2s, border-left 0.2s; }
+        .tree-item:hover { background: #161b22; color: #fff; }
+        .tree-item.active { background: #21262d; color: var(--accent); border-left: 2px solid var(--accent); }
+        .tree-item.drag-over { border: 2px dashed var(--accent); background: rgba(88, 166, 255, 0.1); }
+        .root-folder { font-weight: bold; color: #f0f6fc; border-bottom: 1px solid #222; padding-bottom: 10px; margin-bottom: 8px; position: sticky; top: 0; background: #010409; }
+        
+        .controls { display: none; margin-left: auto; gap: 4px; }
+        .tree-item:hover .controls { display: flex; }
+        .control-btn { background: #30363d; border: none; color: #c9d1d9; cursor: pointer; padding: 2px 5px; font-size: 10px; border-radius: 3px; transition: background 0.2s, transform 0.2s; }
+        .control-btn:hover { background: #444; transform: scale(1.1); }
+        .link-btn { color: var(--link); font-weight: bold; }
+
+        .btn { padding: 5px 12px; border-radius: 4px; border: 1px solid #444; cursor: pointer; background: #30363d; color: white; font-size: 11px; font-weight: bold; transition: all 0.3s ease; }
+        .btn:hover { background: #444; transform: translateY(-1px); }
+        .btn-green { background: var(--success); border: none; }
+        .btn-green:hover { background: #2ea043; }
+        input, select { background: #0d1117; color: white; border: 1px solid #333; padding: 6px; border-radius: 4px; font-size: 12px; outline: none; transition: border 0.3s; }
+        input:focus, select:focus { border-color: var(--accent); }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+        
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .modal-content {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 500px;
+            max-width: 90%;
+            padding: 0;
+            transform: translateY(-20px) scale(0.95);
+            opacity: 0;
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+        
+        .modal-overlay.active .modal-content {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(22, 27, 34, 0.9);
+        }
+        
+        .modal-title {
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: #8b949e;
+            font-size: 24px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s;
+        }
+        
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .modal-body {
+            padding: 24px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        .modal-message {
+            margin: 0 0 20px 0;
+            line-height: 1.6;
+            color: var(--text);
+        }
+        
+        .modal-input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: white;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 20px 24px;
+            border-top: 1px solid var(--border);
+            background: rgba(22, 27, 34, 0.8);
+        }
+        
+        .modal-btn {
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            min-width: 80px;
+        }
+        
+        .modal-btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+        
+        .modal-btn-primary:hover {
+            background: #4493f8;
+            transform: translateY(-2px);
+        }
+        
+        .modal-btn-secondary {
+            background: #30363d;
+            color: white;
+            border: 1px solid var(--border);
+        }
+        
+        .modal-btn-secondary:hover {
+            background: #444;
+        }
+        
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--success);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            z-index: 1001;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s;
+        }
+        
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        
+        .toast.error {
+            background: #da3633;
+        }
+        
+        .toast.info {
+            background: var(--accent);
+        }
+        
+        /* Smooth animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease forwards;
+        }
+        
+        .slide-up {
+            animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        
+        /* Smooth transitions for editor */
+        #editorView, #imgView {
+            transition: opacity 0.3s ease;
+        }
+        
+        /* Active button effect */
+        .toolbar .btn.active {
+            background: var(--accent);
+            color: white;
+            box-shadow: 0 0 15px rgba(88, 166, 255, 0.3);
+        }
+        
+        /* Preview page indicator */
+        .preview-info {
+            background: rgba(22, 27, 34, 0.9);
+            padding: 8px 15px;
+            font-size: 12px;
+            color: #8b949e;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .preview-page {
+            color: var(--accent);
+            font-weight: bold;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div style="display:flex; gap:12px; align-items:center;">
+        <select id="tplSelect" onchange="loadTemplate()">
+            <option value="web">Web Project</option>
+            <option value="chrome">Chrome Extension</option>
+            <option value="blank">Blank Project</option>
+        </select>
+        <input type="text" id="projInput" value="my-project" oninput="updateExplorer()">
+    </div>
+    <button class="btn btn-green" onclick="exportProject()">DOWNLOAD PROJECT</button>
+</header>
+
+<div class="main">
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">Explorer</div>
+        <div id="tree" class="file-tree" ondragover="event.preventDefault()"></div>
+    </div>
+    <div class="resizer" id="resizer1"></div>
+
+    <div class="workspace">
+        <div class="path-bar">
+            <span id="pathLabel">index.html</span>
+            <div class="path-actions" id="pathActions">
+                <button class="btn" onclick="copyPath()" title="Copy file path">📋 Copy Path</button>
+                <button class="btn" onclick="copyImgTag()" id="copyImgBtn" style="display:none;" title="Copy image HTML tag">📋 Image Tag</button>
+                <button class="btn" onclick="copyCssLink()" id="copyCssBtn" style="display:none;" title="Copy CSS link tag">📋 CSS Link</button>
+                <button class="btn" onclick="copyJsLink()" id="copyJsBtn" style="display:none;" title="Copy JS script tag">📋 JS Script</button>
+            </div>
+        </div>
+        <div class="editor-container" id="editorView">
+            <div id="gutter" class="line-numbers">1</div>
+            <textarea id="editor" oninput="handleEdit()" onkeydown="handleKey(event)" spellcheck="false"></textarea>
+        </div>
+        <div id="imgView"></div>
+    </div>
+    <div class="resizer" id="resizer2"></div>
+
+    <div class="preview-panel" id="preview">
+        <div class="preview-info">
+            <span>Preview:</span>
+            <span class="preview-page" id="previewPageName">index.html</span>
+        </div>
+        <div class="toolbar">
+            <button class="btn" onclick="resPreview(375)" id="mobileBtn" title="Mobile Preview">📱 Mobile</button>
+            <button class="btn active" onclick="resPreview('100%')" id="desktopBtn" title="Desktop Preview">💻 Desktop</button>
+            <button class="btn" style="background:#007bff; border:none;" onclick="fullscreenPreview()" title="Fullscreen Preview">✅Full</button>
+        </div>
+        <div class="iframe-container">
+            <div id="prevWrapper"><iframe id="prev"></iframe></div>
+        </div>
+    </div>
+</div>
+
+<!-- Custom Modal for Alerts/Confirmations -->
+<div class="modal-overlay" id="customModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-title" id="modalIcon">💡</div>
+            <button class="modal-close" onclick="hideModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-message" id="modalMessage">Modal message goes here</p>
+            <div id="modalInputContainer" style="display:none;">
+                <input type="text" class="modal-input" id="modalInput" placeholder="Enter value...">
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="modal-btn modal-btn-secondary" id="modalCancelBtn" onclick="hideModal()">Cancel</button>
+            <button class="modal-btn modal-btn-primary" id="modalConfirmBtn" onclick="confirmModal()">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- Rename Modal -->
+<div class="modal-overlay" id="renameModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-title">✏️ Rename File/Folder</div>
+            <button class="modal-close" onclick="closeRenameModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-message" id="renameMessage">Enter new name:</p>
+            <input type="text" class="modal-input" id="renameInput" placeholder="Enter new name...">
+            <p style="color: #8b949e; font-size: 12px; margin-top: 10px;">
+                <span id="renameWarning" style="color: #f85149; display: none;">⚠️ A file/folder with this name already exists!</span>
+            </p>
+        </div>
+        <div class="modal-actions">
+            <button class="modal-btn modal-btn-secondary" onclick="closeRenameModal()">Cancel</button>
+            <button class="modal-btn modal-btn-primary" onclick="confirmRename()">Rename</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div class="toast" id="toast">
+    <span id="toastIcon">✓</span>
+    <span id="toastMessage">Action completed successfully!</span>
+</div>
+
+<input type="file" id="fileInput" style="display:none" onchange="handleFileUpload(event)">
+
+<script>
+    const templates = {
+        web: { 
+            'index.html': { type: 'file', content: '<!DOCTYPE html>\n<html>\n<head>\n  <title>App</title>\n  <link rel="stylesheet" href="css/style.css">\n</head>\n<body>\n  <h1>Connected!</h1>\n   <script src="js/script.js"><\/script>\n</body>\n</html>' }, 
+            'css': { type: 'folder', open: true, children: { 'style.css': { type: 'file', content: 'h1 { color: #58a6ff; } a { color: #8b949e; text-decoration: none; } a:hover { color: #58a6ff; }' } } },
+            'js': { type: 'folder', open: true, children: { 'script.js': { type: 'file', content: 'console.log("Hello!");' } } },
+            'about.html': { type: 'file', content: '<!DOCTYPE html>\n<html>\n<head>\n  <title>About</title>\n  <link rel="stylesheet" href="css/style.css">\n</head>\n<body>\n  <h1>About Page</h1>\n  <script src="js/script.js"><\/script>\n</body>\n</html>' }
+        },
+        chrome: { 
+            'manifest.json': { 
+                type: 'file', 
+                content: `{
+  "manifest_version": 3,
+  "name": "My Chrome Extension",
+  "version": "1.0",
+  "description": "A simple Chrome Extension",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "My Extension"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}`
+            },
+            'background.js': { 
+                type: 'file', 
+                content: `// Background service worker for Chrome Extension
+
+console.log("Background script loaded");
+
+// Listen for extension installation
+chrome.runtime.onInstalled.addListener(() => {
+  console.log("Extension installed");
+  
+  // Initialize storage with default values
+  chrome.storage.local.set({
+    enabled: true,
+    counter: 0
+  });
+});
+
+// Listen for messages from content scripts or popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("Message received in background:", message);
+  
+  if (message.action === "getStatus") {
+    chrome.storage.local.get(["enabled"], (result) => {
+      sendResponse({ enabled: result.enabled });
+    });
+    return true; // Required for async response
+  }
+  
+  if (message.action === "toggleStatus") {
+    chrome.storage.local.get(["enabled"], (result) => {
+      const newStatus = !result.enabled;
+      chrome.storage.local.set({ enabled: newStatus }, () => {
+        // Notify all tabs about the status change
+        chrome.tabs.query({}, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, {
+              action: "statusChanged",
+              enabled: newStatus
+            }).catch(() => {
+              // Tab might not have content script, ignore error
+            });
+          });
+        });
+        sendResponse({ enabled: newStatus });
+      });
+    });
+    return true; // Required for async response
+  }
+});`
+            },
+            'content.js': { 
+                type: 'file', 
+                content: `// Content script for Chrome Extension
+
+console.log("Content script loaded");
+
+// Initialize extension state
+let extensionEnabled = true;
+
+// Listen for messages from background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "statusChanged") {
+    extensionEnabled = message.enabled;
+    console.log("Extension status changed:", extensionEnabled);
+    updatePageBasedOnStatus();
+  }
+  return true;
+});
+
+// Get initial status from background script
+chrome.runtime.sendMessage({ action: "getStatus" }, (response) => {
+  if (response && response.enabled !== undefined) {
+    extensionEnabled = response.enabled;
+    updatePageBasedOnStatus();
+  }
+});
+
+function updatePageBasedOnStatus() {
+  if (extensionEnabled) {
+    console.log("Extension is enabled on this page");
+    // Add your enabled functionality here
+    addExtensionUI();
+  } else {
+    console.log("Extension is disabled on this page");
+    // Remove any added UI
+    removeExtensionUI();
+  }
+}
+
+function addExtensionUI() {
+  // Example: Add a subtle indicator to the page
+  const indicator = document.createElement('div');
+  indicator.id = 'extension-indicator';
+  indicator.style.cssText = \`
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    background: #58a6ff;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    z-index: 10000;
+    opacity: 0.8;
+    font-family: Arial, sans-serif;
+  \`;
+  indicator.textContent = 'Extension Active';
+  document.body.appendChild(indicator);
+}
+
+function removeExtensionUI() {
+  const indicator = document.getElementById('extension-indicator');
+  if (indicator) {
+    indicator.remove();
+  }
+}
+
+// Example: Listen for clicks and log them
+document.addEventListener('click', (event) => {
+  if (extensionEnabled) {
+    console.log('Clicked element:', event.target.tagName);
+  }
+});
+
+// Example: Modify page content
+if (extensionEnabled) {
+  // You can add page modifications here
+  console.log('Page URL:', window.location.href);
+}`
+            },
+            'popup.html': { 
+                type: 'file', 
+                content: `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>My Extension</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="popup-header">
+      <h1>My Extension</h1>
+      <div class="status-indicator">
+        <span class="status-label">Status:</span>
+        <span class="status-badge" id="statusBadge">Enabled</span>
+      </div>
+    </div>
+    
+    <div class="popup-content">
+      <p>This is a Chrome Extension popup.</p>
+      
+      <div class="controls">
+        <button id="toggleBtn" class="btn btn-primary">Disable Extension</button>
+        <button id="counterBtn" class="btn btn-secondary">Click Counter: <span id="counterValue">0</span></button>
+      </div>
+      
+      <div class="info-section">
+        <h3>Current Page Info:</h3>
+        <p id="pageInfo">Loading...</p>
+      </div>
+    </div>
+    
+    <div class="popup-footer">
+      <small>Version 1.0</small>
+    </div>
+  </div>
+  
+  <script src="popup.js"><\/script>
+</body>
+</html>`
+            },
+            'popup.css': { 
+                type: 'file', 
+                content: `/* Popup styles for Chrome Extension */
+
+body {
+  margin: 0;
+  padding: 0;
+  width: 300px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #c9d1d9;
+}
+
+.popup-container {
+  padding: 15px;
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #30363d;
+}
+
+.popup-header h1 {
+  margin: 0;
+  font-size: 18px;
+  color: #58a6ff;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-label {
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.status-badge {
+  background: #238636;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.status-badge.disabled {
+  background: #da3633;
+}
+
+.popup-content {
+  margin-bottom: 15px;
+}
+
+.popup-content p {
+  margin: 0 0 15px 0;
+  line-height: 1.5;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #58a6ff;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #4493f8;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: #30363d;
+  color: white;
+  border: 1px solid #444;
+}
+
+.btn-secondary:hover {
+  background: #444;
+}
+
+.info-section {
+  background: #161b22;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+}
+
+.info-section h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #8b949e;
+}
+
+.info-section p {
+  margin: 0;
+  font-size: 12px;
+  color: #c9d1d9;
+  word-break: break-all;
+}
+
+.popup-footer {
+  text-align: center;
+  padding-top: 10px;
+  border-top: 1px solid #30363d;
+  font-size: 11px;
+  color: #8b949e;
+}`
+            },
+            'popup.js': { 
+                type: 'file', 
+                content: `// Popup script for Chrome Extension
+
+document.addEventListener('DOMContentLoaded', () => {
+  const toggleBtn = document.getElementById('toggleBtn');
+  const counterBtn = document.getElementById('counterBtn');
+  const counterValue = document.getElementById('counterValue');
+  const statusBadge = document.getElementById('statusBadge');
+  const pageInfo = document.getElementById('pageInfo');
+  
+  let counter = 0;
+  let extensionEnabled = true;
+  
+  // Load saved counter from storage
+  chrome.storage.local.get(['counter', 'enabled'], (result) => {
+    if (result.counter !== undefined) {
+      counter = result.counter;
+      updateCounter();
+    }
+    
+    if (result.enabled !== undefined) {
+      extensionEnabled = result.enabled;
+      updateToggleButton();
+    }
+  });
+  
+  // Get current tab info
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]) {
+      const tab = tabs[0];
+      pageInfo.textContent = \`\${tab.title}\\n\${tab.url}\`;
+    }
+  });
+  
+  // Toggle button click handler
+  toggleBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: "toggleStatus" }, (response) => {
+      if (response && response.enabled !== undefined) {
+        extensionEnabled = response.enabled;
+        updateToggleButton();
+      }
+    });
+  });
+  
+  // Counter button click handler
+  counterBtn.addEventListener('click', () => {
+    counter++;
+    updateCounter();
+    
+    // Save to storage
+    chrome.storage.local.set({ counter: counter });
+    
+    // Notify background script
+    chrome.runtime.sendMessage({ 
+      action: "counterUpdated", 
+      value: counter 
+    });
+  });
+  
+  // Listen for status changes from background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === "statusChanged") {
+      extensionEnabled = message.enabled;
+      updateToggleButton();
+    }
+  });
+  
+  function updateToggleButton() {
+    if (extensionEnabled) {
+      toggleBtn.textContent = "Disable Extension";
+      toggleBtn.className = "btn btn-primary";
+      statusBadge.textContent = "Enabled";
+      statusBadge.className = "status-badge";
+    } else {
+      toggleBtn.textContent = "Enable Extension";
+      toggleBtn.className = "btn btn-secondary";
+      statusBadge.textContent = "Disabled";
+      statusBadge.className = "status-badge disabled";
+    }
+  }
+  
+  function updateCounter() {
+    counterValue.textContent = counter;
+  }
+  
+  // Initialize UI
+  updateToggleButton();
+  updateCounter();
+});`
+            },
+            'icons': { 
+                type: 'folder', 
+                open: true, 
+                children: {
+                    'icon16.png': { 
+                        type: 'file', 
+                        isImage: true, 
+                        content: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSI4IiBjeT0iOCIgcj0iOCIgZmlsbD0iIzU4QTZGRiIvPjxwYXRoIGQ9Ik04LjU1IDUuMzJINC40N3YxLjY2aDIuMzhWMTFIOC41VjUuMzJaIiBmaWxsPSJ3aGl0ZSIvPjwvc3ZnPg==' 
+                    },
+                    'icon48.png': { 
+                        type: 'file', 
+                        isImage: true, 
+                        content: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyNCIgY3k9IjI0IiByPSIyNCIgZmlsbD0iIzU4QTZGRiIvPjxwYXRoIGQ9Ik0yNS42NSAxNS45NkgxMy40MXY0Ljk4aDcuMTRWMzNIMjUuNjVWMTUuOTZaIiBmaWxsPSJ3aGl0ZSIvPjwvc3ZnPg==' 
+                    },
+                    'icon128.png': { 
+                        type: 'file', 
+                        isImage: true, 
+                        content: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgdmlld0JveD0iMCAwIDEyOCAxMjgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iNjQiIGN5PSI2NCIgcj0iNjQiIGZpbGw9IiM1OEE2RkYiLz48cGF0aCBkPSJNNjguMyA0Mi41NkgzNS43N3YxMy4yOGgxOS4wNFY4NS40NEg2OC4zVjQyLjU2WiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=' 
+                    }
+                }
+            }
+        },
+        blank: { 
+            'index.html': { type: 'file', content: '' } 
+        }
+    };
+
+    let project = {};
+    let activePath = 'index.html';
+    let dragSrc = '';
+    let uploadTarget = '';
+    let currentTemplate = 'web';
+    let modalResolve = null;
+    let modalReject = null;
+    let currentPreviewMode = 'desktop';
+    let renameTargetPath = '';
+    let renameTargetParent = null;
+
+    // --- Panel Resizing ---
+    function setupResizer(resizer, panel, side) {
+        let startX, startW;
+        resizer.onmousedown = (e) => {
+            startX = e.clientX; startW = panel.offsetWidth;
+            resizer.classList.add('dragging');
+            document.onmousemove = (e) => {
+                const delta = side === 'left' ? e.clientX - startX : startX - e.clientX;
+                panel.style.width = `${startW + delta}px`;
+            };
+            document.onmouseup = () => {
+                resizer.classList.remove('dragging');
+                document.onmousemove = document.onmouseup = null;
+            };
+        };
+    }
+    setupResizer(document.getElementById('resizer1'), document.getElementById('sidebar'), 'left');
+    setupResizer(document.getElementById('resizer2'), document.getElementById('preview'), 'right');
+
+    // --- Custom Modal System ---
+    function showModal(options) {
+        return new Promise((resolve, reject) => {
+            modalResolve = resolve;
+            modalReject = reject;
+            
+            const modal = document.getElementById('customModal');
+            const iconMap = {
+                'info': '💡',
+                'success': '✓',
+                'error': '⚠',
+                'warning': '⚠',
+                'question': '❓'
+            };
+            
+            document.getElementById('modalIcon').textContent = iconMap[options.type || 'info'];
+            document.getElementById('modalMessage').textContent = options.message;
+            
+            const inputContainer = document.getElementById('modalInputContainer');
+            if (options.input) {
+                inputContainer.style.display = 'block';
+                document.getElementById('modalInput').value = options.defaultValue || '';
+                document.getElementById('modalInput').placeholder = options.placeholder || 'Enter value...';
+            } else {
+                inputContainer.style.display = 'none';
+            }
+            
+            const cancelBtn = document.getElementById('modalCancelBtn');
+            const confirmBtn = document.getElementById('modalConfirmBtn');
+            
+            if (options.confirmOnly) {
+                cancelBtn.style.display = 'none';
+                confirmBtn.textContent = options.confirmText || 'OK';
+            } else {
+                cancelBtn.style.display = 'inline-block';
+                cancelBtn.textContent = options.cancelText || 'Cancel';
+                confirmBtn.textContent = options.confirmText || 'OK';
+            }
+            
+            modal.classList.add('active');
+        });
+    }
+    
+    function hideModal() {
+        const modal = document.getElementById('customModal');
+        modal.classList.remove('active');
+        if (modalReject) {
+            modalReject();
+            modalResolve = null;
+            modalReject = null;
+        }
+    }
+    
+    function confirmModal() {
+        const modal = document.getElementById('customModal');
+        const inputContainer = document.getElementById('modalInputContainer');
+        let value = null;
+        
+        if (inputContainer.style.display === 'block') {
+            value = document.getElementById('modalInput').value;
+        }
+        
+        modal.classList.remove('active');
+        if (modalResolve) {
+            modalResolve(value || true);
+            modalResolve = null;
+            modalReject = null;
+        }
+    }
+    
+    // Toast notification system
+    function showToast(message, type = 'success', duration = 3000) {
+        const toast = document.getElementById('toast');
+        const toastIcon = document.getElementById('toastIcon');
+        const toastMessage = document.getElementById('toastMessage');
+        
+        const iconMap = {
+            'success': '✓',
+            'error': '✗',
+            'info': 'ℹ'
+        };
+        
+        toastIcon.textContent = iconMap[type] || '✓';
+        toastMessage.textContent = message;
+        toast.className = 'toast';
+        toast.classList.add(type, 'show');
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+        }, duration);
+    }
+    
+    // Replace alert with modal
+    function showAlert(message, type = 'info') {
+        return showModal({
+            message: message,
+            type: type,
+            confirmOnly: true
+        });
+    }
+    
+    // Replace confirm with modal
+    function showConfirm(message, type = 'question') {
+        return showModal({
+            message: message,
+            type: type,
+            confirmOnly: false
+        });
+    }
+    
+    // Replace prompt with modal
+    function showPrompt(message, defaultValue = '') {
+        return showModal({
+            message: message,
+            type: 'question',
+            input: true,
+            defaultValue: defaultValue
+        });
+    }
+
+    // --- Core Logic ---
+    function loadTemplate() {
+        currentTemplate = document.getElementById('tplSelect').value;
+        project = JSON.parse(JSON.stringify(templates[currentTemplate]));
+        
+        // Set default active path based on template
+        if (currentTemplate === 'chrome') {
+            activePath = 'popup.html'; // Default to popup.html for Chrome extension
+        } else {
+            activePath = 'index.html';
+        }
+        
+        updateExplorer();
+    }
+
+    function renderTree(obj, parent = '', indent = 1) {
+        let html = '';
+        const sorted = Object.keys(obj).sort((a,b) => obj[a].type === obj[b].type ? a.localeCompare(b) : (obj[a].type === 'folder' ? -1 : 1));
+        sorted.forEach(key => {
+            const itm = obj[key];
+            const path = parent ? `${parent}/${key}` : key;
+            const isLinkable = itm.type === 'file' && (key.endsWith('.css') || key.endsWith('.js'));
+            html += `
+                <div class="tree-item ${activePath === path ? 'active' : ''}" style="padding-left:${indent*20}px" draggable="true"
+                     ondragstart="dragSrc='${path}'" ondragover="event.preventDefault(); this.classList.add('drag-over')"
+                     ondragleave="this.classList.remove('drag-over')" ondrop="handleDrop(event, '${path}')"
+                     onclick="itemClick(event, '${path}')">
+                    <span style="width:14px; font-size:10px;">${itm.type==='folder'?(itm.open?'▼':'▶'):''}</span>
+                    <span style="color:${itm.type==='folder'?'var(--folder)':'#c9d1d9'}">${itm.type==='folder'?'📁':'📄'}</span>
+                    <span style="margin-left:6px">${key}</span>
+                    <div class="controls">
+                        <button class="control-btn" title="Rename" onclick="showRenameModal('${path}', event)">✏️</button>
+                        ${itm.type==='folder'?`<button class="control-btn" onclick="newItem('${path}','file',event)">+📄</button><button class="control-btn" onclick="newItem('${path}','folder',event)">+📁</button><button class="control-btn" onclick="triggerUpload('${path}', event)">↑</button>`:''}
+                        <button class="control-btn" onclick="del('${path}',event)">&times;</button>
+                    </div>
+                </div>`;
+            if (itm.type === 'folder' && itm.open) html += renderTree(itm.children, path, indent+1);
+        });
+        return html;
+    }
+
+    // --- Copy CSS/JS Link Functions ---
+    function copyCssLink() {
+        const path = activePath;
+        const fileName = path.split('/').pop();
+        const cssLink = `<link rel="stylesheet" href="${path}">`;
+        navigator.clipboard.writeText(cssLink).then(() => {
+            showToast(`Copied CSS link for: ${fileName}`, 'success');
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+            showToast('Failed to copy CSS link', 'error');
+        });
+    }
+    
+    function copyJsLink() {
+        const path = activePath;
+        const fileName = path.split('/').pop();
+        const jsLink = `<script src="${path}"><\/script>`;
+        navigator.clipboard.writeText(jsLink).then(() => {
+            showToast(`Copied JS script tag for: ${fileName}`, 'success');
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+            showToast('Failed to copy JS script tag', 'error');
+        });
+    }
+
+    // --- Rename Feature ---
+    function showRenameModal(filePath, e) {
+        e.stopPropagation();
+        renameTargetPath = filePath;
+        
+        // Get the item and its parent
+        const pathParts = filePath.split('/');
+        const fileName = pathParts.pop();
+        renameTargetParent = pathParts.length ? find(pathParts.join('/')) : null;
+        
+        // Set up modal
+        document.getElementById('renameInput').value = fileName;
+        document.getElementById('renameWarning').style.display = 'none';
+        
+        // Show modal
+        const modal = document.getElementById('renameModal');
+        modal.classList.add('active');
+        
+        // Focus on input
+        setTimeout(() => {
+            document.getElementById('renameInput').focus();
+            document.getElementById('renameInput').select();
+        }, 100);
+    }
+    
+    function closeRenameModal() {
+        const modal = document.getElementById('renameModal');
+        modal.classList.remove('active');
+        renameTargetPath = '';
+        renameTargetParent = null;
+    }
+    
+    function confirmRename() {
+        const newName = document.getElementById('renameInput').value.trim();
+        if (!newName) {
+            showToast("Name cannot be empty", 'error');
+            return;
+        }
+        
+        // Check if name already exists in the same directory
+        const pathParts = renameTargetPath.split('/');
+        const oldName = pathParts.pop();
+        const parentPath = pathParts.join('/');
+        
+        const parentObj = renameTargetParent || project;
+        const parent = parentObj.children || parentObj;
+        
+        // Check if new name already exists (excluding the current file)
+        if (parent[newName] && newName !== oldName) {
+            document.getElementById('renameWarning').style.display = 'block';
+            return;
+        }
+        
+        // Perform rename
+        const item = find(renameTargetPath);
+        if (!item) {
+            showToast("File not found", 'error');
+            closeRenameModal();
+            return;
+        }
+        
+        // Remove old entry and add new one
+        delete parent[oldName];
+        parent[newName] = item;
+        
+        // Update active path if it was the renamed file
+        if (activePath === renameTargetPath) {
+            const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+            activePath = newPath;
+        }
+        
+        // Update references in all HTML files
+        updateReferencesInHtml(oldName, newName, parentPath);
+        
+        closeRenameModal();
+        updateExplorer();
+        showToast(`Renamed "${oldName}" to "${newName}"`, 'success');
+    }
+    
+    function updateReferencesInHtml(oldName, newName, oldPath) {
+        // Get new path
+        const newPath = oldPath ? `${oldPath}/${newName}` : newName;
+        const oldFullPath = oldPath ? `${oldPath}/${oldName}` : oldName;
+        
+        // Update references in all HTML files
+        function updateRefs(obj) {
+            Object.keys(obj).forEach(k => {
+                if (obj[k].type === 'file' && k.endsWith('.html')) {
+                    let content = obj[k].content;
+                    // Replace references to the old path with new path
+                    const oldPathRegex = new RegExp(oldFullPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                    content = content.replace(oldPathRegex, newPath);
+                    obj[k].content = content;
+                } else if (obj[k].type === 'folder') {
+                    updateRefs(obj[k].children);
+                }
+            });
+        }
+        
+        updateRefs(project);
+    }
+
+    // --- Path Copy Functions ---
+    function copyPath() {
+        const path = activePath;
+        navigator.clipboard.writeText(path).then(() => {
+            showToast(`Copied path: ${path}`, 'success');
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+            showToast('Failed to copy path', 'error');
+        });
+    }
+
+    function copyImgTag() {
+        const itm = find(activePath);
+        if (itm && itm.isImage) {
+            const fileName = activePath.split('/').pop();
+            const imgTag = `<img src="${activePath}" alt="${fileName.replace(/\.[^/.]+$/, "")}">`;
+            navigator.clipboard.writeText(imgTag).then(() => {
+                showToast('Image HTML tag copied to clipboard', 'success');
+            }).catch(err => {
+                console.error('Failed to copy: ', err);
+                showToast('Failed to copy image tag', 'error');
+            });
+        }
+    }
+
+    // --- Preview Animation Functions ---
+    function resPreview(width) {
+        const prevWrapper = document.getElementById('prevWrapper');
+        const mobileBtn = document.getElementById('mobileBtn');
+        const desktopBtn = document.getElementById('desktopBtn');
+        const iframe = document.getElementById('prev');
+        
+        // Update active button state
+        mobileBtn.classList.remove('active');
+        desktopBtn.classList.remove('active');
+        
+        if (width === 375) {
+            mobileBtn.classList.add('active');
+            currentPreviewMode = 'mobile';
+            // Add mobile device styling
+            prevWrapper.style.borderRadius = '20px';
+            prevWrapper.style.boxShadow = '0 0 30px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.1)';
+            // Add smooth scaling effect
+            prevWrapper.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                prevWrapper.style.transform = 'scale(1)';
+            }, 400);
+        } else {
+            desktopBtn.classList.add('active');
+            currentPreviewMode = 'desktop';
+            prevWrapper.style.borderRadius = '8px';
+            prevWrapper.style.boxShadow = '0 0 20px rgba(0,0,0,0.2)';
+            prevWrapper.style.transform = 'none';
+        }
+        
+        // Smooth width transition
+        prevWrapper.style.width = typeof width === 'number' ? width + 'px' : width;
+        
+        // Add a subtle fade effect on the iframe during transition
+        iframe.style.opacity = '0.7';
+        setTimeout(() => {
+            iframe.style.opacity = '1';
+        }, 200);
+    }
+    
+    function fullscreenPreview() {
+        const prev = document.getElementById('prev');
+        if (prev.requestFullscreen) {
+            prev.requestFullscreen();
+        } else if (prev.webkitRequestFullscreen) {
+            prev.webkitRequestFullscreen();
+        } else if (prev.msRequestFullscreen) {
+            prev.msRequestFullscreen();
+        }
+    }
+
+    // --- Utility Functions ---
+    function find(path) {
+        let cur = project;
+        const parts = path.split('/');
+        for(let i=0; i<parts.length; i++) {
+            if(!cur[parts[i]]) return null;
+            if(i === parts.length-1) return cur[parts[i]];
+            cur = cur[parts[i]].children;
+        }
+    }
+
+    function updateExplorer() {
+        const rootName = document.getElementById('projInput').value;
+        document.getElementById('tree').innerHTML = `
+            <div class="tree-item root-folder" ondrop="handleDrop(event, 'ROOT')" ondragover="event.preventDefault(); this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')">
+                <span style="color:var(--folder); margin-right:8px;">📁</span><span>${rootName}</span>
+                <div class="controls" style="display:flex;">
+                    <button class="control-btn" onclick="newItem('', 'file', event)">+📄</button>
+                    <button class="control-btn" onclick="newItem('', 'folder', event)">+📁</button>
+                    <button class="control-btn" onclick="triggerUpload('', event)">↑</button>
+                </div>
+            </div>
+            ${renderTree(project)}
+        `;
+        const itm = find(activePath);
+        const edV = document.getElementById('editorView'), imgV = document.getElementById('imgView');
+        const copyImgBtn = document.getElementById('copyImgBtn');
+        const copyCssBtn = document.getElementById('copyCssBtn');
+        const copyJsBtn = document.getElementById('copyJsBtn');
+        
+        // Show/hide appropriate copy buttons
+        copyImgBtn.style.display = 'none';
+        copyCssBtn.style.display = 'none';
+        copyJsBtn.style.display = 'none';
+        
+        if (itm && itm.isImage) { 
+            edV.style.display = 'none'; 
+            imgV.style.display = 'flex'; 
+            imgV.innerHTML = `<img src="${itm.content}">`; 
+            copyImgBtn.style.display = 'inline-block';
+        } else { 
+            edV.style.display = 'flex'; 
+            imgV.style.display = 'none'; 
+            document.getElementById('editor').value = itm ? itm.content : '';
+            
+            // Show CSS/JS copy buttons for appropriate files
+            if (itm && itm.type === 'file') {
+                if (activePath.endsWith('.css')) {
+                    copyCssBtn.style.display = 'inline-block';
+                } else if (activePath.endsWith('.js')) {
+                    copyJsBtn.style.display = 'inline-block';
+                }
+            }
+        }
+        document.getElementById('pathLabel').innerText = activePath;
+        updateLines(); 
+        
+        // Update preview page name
+        const fileName = activePath.split('/').pop();
+        if (itm && itm.type === 'file' && activePath.endsWith('.html')) {
+            document.getElementById('previewPageName').textContent = fileName;
+        } else {
+            // For Chrome extension, default to popup.html if available
+            if (currentTemplate === 'chrome' && find('popup.html')) {
+                document.getElementById('previewPageName').textContent = 'popup.html';
+            } else {
+                document.getElementById('previewPageName').textContent = 'index.html';
+            }
+        }
+        
+        renderPreview();
+    }
+
+    function itemClick(e, path) { 
+        e.stopPropagation(); 
+        const itm = find(path); 
+        if(itm.type==='folder') itm.open = !itm.open; 
+        else {
+            activePath = path;
+            // If it's an HTML file, update preview
+            if (path.endsWith('.html')) {
+                renderPreview();
+            }
+        }
+        updateExplorer(); 
+    }
+
+    function handleDrop(e, target) {
+        e.preventDefault(); e.stopPropagation();
+        document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('drag-over'));
+        let dest = target === 'ROOT' ? '' : (find(target).type === 'folder' ? target : target.split('/').slice(0,-1).join('/'));
+        if(dragSrc === dest || dest.startsWith(dragSrc + '/')) return;
+        const parts = dragSrc.split('/'); const name = parts.pop(); const itm = find(dragSrc);
+        const oldP = parts.length ? find(parts.join('/')) : null;
+        if(!oldP) delete project[name]; else delete oldP.children[name];
+        const newP = dest ? find(dest) : null;
+        if(!newP) project[name] = itm; else { newP.children[name] = itm; newP.open = true; }
+        updateExplorer();
+    }
+
+    async function newItem(parent, type, e) {
+        e.stopPropagation(); 
+        const name = await showPrompt(`New ${type}:`, type === 'file' ? 'newfile.txt' : 'newfolder');
+        if(!name) return;
+        const obj = { type, open: true }; if(type==='file') obj.content = ''; else obj.children = {};
+        if(!parent) project[name] = obj; else { const p = find(parent); p.children[name] = obj; p.open = true; }
+        updateExplorer();
+        showToast(`Created ${type}: ${name}`, 'success');
+    }
+
+    async function del(path, e) { 
+        e.stopPropagation(); 
+        const itm = find(path);
+        const itemName = path.split('/').pop();
+        const confirmed = await showConfirm(`Are you sure you want to delete "${itemName}"?`, 'warning');
+        if (!confirmed) return;
+        const p = path.split('/'); const n = p.pop(); const parent = p.length ? find(p.join('/')) : null; 
+        if(!parent) delete project[n]; else delete parent.children[n]; 
+        updateExplorer(); 
+        showToast('File deleted successfully', 'success');
+    }
+    
+    function triggerUpload(path, e) { 
+        e.stopPropagation(); 
+        uploadTarget = path; 
+        document.getElementById('fileInput').click(); 
+    }
+    
+    function handleFileUpload(e) { 
+        const file = e.target.files[0]; 
+        if(!file) return; 
+        const reader = new FileReader(); 
+        reader.onload = (ev) => { 
+            const itm = { type: 'file', content: ev.target.result, isImage: file.type.startsWith('image/') }; 
+            if(!uploadTarget) project[file.name] = itm; else find(uploadTarget).children[file.name] = itm; 
+            updateExplorer(); 
+            showToast(`Uploaded: ${file.name}`, 'success');
+        }; 
+        if(file.type.startsWith('image/')) reader.readAsDataURL(file); else reader.readAsText(file); 
+    }
+    
+    function updateLines() { 
+        const lines = document.getElementById('editor').value.split('\n').length; 
+        document.getElementById('gutter').innerHTML = Array.from({length: lines}, (_, i) => i + 1).join('<br>'); 
+    }
+    
+    function handleEdit() { 
+        const itm = find(activePath); 
+        if(itm) itm.content = document.getElementById('editor').value; 
+        updateLines(); 
+        renderPreview(); 
+    }
+
+    function handleKey(e) {
+        const area = e.target;
+        if (e.key === 'Tab') { e.preventDefault(); const s = area.selectionStart; area.value = area.value.substring(0, s) + "    " + area.value.substring(area.selectionEnd); area.selectionStart = area.selectionEnd = s + 4; handleEdit(); }
+        if (e.key === '>') {
+            setTimeout(() => {
+                const pos = area.selectionStart; const text = area.value.substring(0, pos); const match = text.match(/<(\w+)[^>]*>$/);
+                if (match) { const tag = match[1]; const voidTags = ['img','br','input','hr','link','meta']; if(!voidTags.includes(tag.toLowerCase())) { area.value = area.value.substring(0, pos) + `</${tag}>` + area.value.substring(pos); area.selectionStart = area.selectionEnd = pos; } }
+                handleEdit();
+            }, 0);
+        }
+    }
+
+    function renderPreview() {
+        // Determine which HTML file to preview
+        let currentHtmlFile = null;
+        const itm = find(activePath);
+        
+        // If the active file is an HTML file, preview it
+        if (itm && itm.type === 'file' && activePath.endsWith('.html')) {
+            currentHtmlFile = activePath;
+        } else {
+            // Otherwise, default based on template
+            if (currentTemplate === 'chrome' && find('popup.html')) {
+                currentHtmlFile = 'popup.html';
+            } else {
+                currentHtmlFile = 'index.html';
+            }
+        }
+        
+        const htmlItem = find(currentHtmlFile);
+        let html = htmlItem ? htmlItem.content : '';
+        let css = '', js = '';
+        const assets = {}; // Store all file content by path
+        
+        // First pass: collect all file content
+        function collectAssets(obj, currentPath = '') {
+            Object.keys(obj).forEach(k => {
+                const fullPath = currentPath ? `${currentPath}/${k}` : k;
+                if(obj[k].type === 'file') {
+                    assets[fullPath] = {
+                        content: obj[k].content,
+                        isImage: obj[k].isImage || false
+                    };
+                } else if (obj[k].type === 'folder') {
+                    collectAssets(obj[k].children, fullPath);
+                }
+            });
+        }
+        
+        collectAssets(project);
+        
+        // Second pass: collect CSS and JS files
+        function collectStylesScripts(obj, currentPath = '') {
+            Object.keys(obj).forEach(k => {
+                const fullPath = currentPath ? `${currentPath}/${k}` : k;
+                if(obj[k].type === 'file') {
+                    if(k.endsWith('.css')) {
+                        css += `<style>/* ${fullPath} */\n${obj[k].content}</style>`;
+                    }
+                    else if(k.endsWith('.js')) {
+                        js += `<script>/* ${fullPath} */\n${obj[k].content}<\/script>`;
+                    }
+                } else if (obj[k].type === 'folder') {
+                    collectStylesScripts(obj[k].children, fullPath);
+                }
+            });
+        }
+        
+        collectStylesScripts(project);
+        
+        // Replace all file references with their actual content
+        Object.keys(assets).forEach(filePath => {
+            const fileName = filePath.split('/').pop();
+            
+            // Replace in HTML
+            if(assets[filePath].isImage) {
+                // Escape special regex characters in fileName
+                const escapedFileName = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                // Replace image src attributes (handles different quote styles and relative paths)
+                const regex = new RegExp(`src\\s*=\\s*["'][^"']*${escapedFileName}["']`, 'gi');
+                html = html.replace(regex, `src="${assets[filePath].content}"`);
+            } else {
+                // Replace other file references (like href for CSS, src for JS)
+                const escapedFileName = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const cssRegex = new RegExp(`href\\s*=\\s*["'][^"']*${escapedFileName}["']`, 'gi');
+                const jsRegex = new RegExp(`src\\s*=\\s*["'][^"']*${escapedFileName}["']`, 'gi');
+                html = html.replace(cssRegex, `href="${assets[filePath].content}"`);
+                html = html.replace(jsRegex, `src="${assets[filePath].content}"`);
+            }
+        });
+        
+        const f = document.getElementById('prev').contentWindow.document;
+        f.open(); 
+        f.write(`<!DOCTYPE html><html><head>${css}</head><body>${html}${js}</body></html>`); 
+        f.close();
+    }
+
+    async function exportProject() {
+        try {
+            // Get only the files from the current project
+            const filesToExport = {};
+            
+            function collectExportFiles(obj, currentPath = '') {
+                Object.keys(obj).forEach(k => {
+                    const fullPath = currentPath ? `${currentPath}/${k}` : k;
+                    if (obj[k].type === 'file') {
+                        // Don't export template-specific files from other templates
+                        if (currentTemplate === 'web') {
+                            // Only export web project files
+                            filesToExport[fullPath] = {
+                                content: obj[k].content,
+                                isImage: obj[k].isImage || false
+                            };
+                        } else if (currentTemplate === 'chrome') {
+                            // Only export chrome extension files
+                            filesToExport[fullPath] = {
+                                content: obj[k].content,
+                                isImage: obj[k].isImage || false
+                            };
+                        } else if (currentTemplate === 'blank') {
+                            // Only export files from blank project
+                            filesToExport[fullPath] = {
+                                content: obj[k].content,
+                                isImage: obj[k].isImage || false
+                            };
+                        }
+                    } else if (obj[k].type === 'folder') {
+                        collectExportFiles(obj[k].children, fullPath);
+                    }
+                });
+            }
+            
+            collectExportFiles(project);
+            
+            if (Object.keys(filesToExport).length === 0) {
+                showAlert("No files to export!", 'warning');
+                return;
+            }
+            
+            const root = await window.showDirectoryPicker();
+            const pDir = await root.getDirectoryHandle(document.getElementById('projInput').value, {create:true});
+            
+            for (const filePath in filesToExport) {
+                const fileData = filesToExport[filePath];
+                const pathParts = filePath.split('/');
+                const fileName = pathParts.pop();
+                
+                // Create directories if needed
+                let currentDir = pDir;
+                for (let i = 0; i < pathParts.length; i++) {
+                    currentDir = await currentDir.getDirectoryHandle(pathParts[i], {create: true});
+                }
+                
+                // Create and write file
+                const f = await currentDir.getFileHandle(fileName, {create: true});
+                const s = await f.createWritable();
+                
+                if (fileData.isImage && fileData.content.startsWith('data:')) {
+                    // Convert data URL to blob for images
+                    const response = await fetch(fileData.content);
+                    const blob = await response.blob();
+                    await s.write(blob);
+                } else {
+                    await s.write(fileData.content);
+                }
+                
+                await s.close();
+            }
+            
+            showToast(`Export Complete! Exported ${Object.keys(filesToExport).length} file(s) from ${currentTemplate} template.`, 'success');
+        } catch(e) { 
+            console.error(e);
+            if (e.name !== 'AbortError') {
+                showAlert("Export cancelled or failed. Make sure you have permission to save files.", 'error');
+            }
+        }
+    }
+
+    // Initialize
+    loadTemplate();
+    
+    // Close modals with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            hideModal();
+            closeRenameModal();
+        }
+    });
+    
+    // Check for duplicate name on rename input
+    document.getElementById('renameInput').addEventListener('input', function() {
+        if (!renameTargetPath) return;
+        
+        const newName = this.value.trim();
+        if (!newName) {
+            document.getElementById('renameWarning').style.display = 'none';
+            return;
+        }
+        
+        const pathParts = renameTargetPath.split('/');
+        const oldName = pathParts.pop();
+        const parentPath = pathParts.join('/');
+        
+        const parentObj = renameTargetParent || project;
+        const parent = parentObj.children || parentObj;
+        
+        // Check if new name already exists (excluding the current file)
+        if (parent[newName] && newName !== oldName) {
+            document.getElementById('renameWarning').style.display = 'block';
+        } else {
+            document.getElementById('renameWarning').style.display = 'none';
+        }
+    });
+</script>
+</body>
+</html>
